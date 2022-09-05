@@ -1,6 +1,7 @@
 #!/bin/env python
 
 import gzip
+import zlib
 import sys
 import re
 import os
@@ -9,6 +10,9 @@ import time
 import glob
 from multiprocessing import Pool
 import string
+import json
+from itertools import takewhile
+from operator import eq
 
 #@profile
 def summarize_file_size(zipfile):
@@ -22,6 +26,8 @@ def summarize_file_size(zipfile):
     exts = {}
     years = {}
     locations = {}
+    root = "<root>"
+    ncdu_json = []
     pattern = re.compile('(\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (.+)$')
 
     try:
@@ -53,6 +59,28 @@ def summarize_file_size(zipfile):
                     continue
 
                 size, user, group, umask, date, n1, n2, n3, n4, path = match.groups()
+
+                # Create ncdu compatible list
+
+                filetype = "d"
+                if umask.split('/')[1].startswith('-'):
+                    filetype = "f"
+
+                if filetype == 'd' or int(size) > 10 * (1024**2):
+
+                    dirs_name = path.rsplit('/',1)
+                    dirs = dirs_name[0]
+                    name = dirs_name[1]
+                    pdb.set_trace()
+
+                    ncdu_json.append("""{{"name":{},"asize":{},"dsize":{},"ino":{},"mtime":{},"type":"{}","dirs":{}}}\n""".format(
+                            json.dumps(name),
+                            size,
+                            int(size) * 1024,
+                            1,
+                            1,
+                            "dir" if filetype == "d" else "file",
+                            json.dumps(path and "{}{}".format(root, dirs) or root)))
 
                 # check if dir
                 if umask.split('/')[1].startswith('d'):
@@ -113,13 +141,6 @@ def summarize_file_size(zipfile):
                     locations[file_location].append(int(size))
                     locations[file_location].append(1)
 
-    #            # print progress
-    #            if i % 100000 == 0:
-    #                t_now = time.time()
-    #                t_diff = t_now - t_prev
-    #                print(f"{projid}\t{i}\t{t_diff}")
-    #                t_prev = t_now
-    #            i+=1
 
     # skip empty files
 #    if len(exts) == 0:
@@ -127,7 +148,6 @@ def summarize_file_size(zipfile):
 #        return
 
     # write the csv files
-
     except EOFError:
         print(f"ERROR: EOFError while reading file {zipfil}")
 
@@ -136,6 +156,34 @@ def summarize_file_size(zipfile):
     writecsv(f'{output_folder}/{projid}.locations.csv', locations, 'location')
 
 
+    # Stolen from https://github.com/wodny/ncdu-export
+    # Write ncdu compatible output format for all files
+    prev_dirs = []
+
+    with gzip.open(f'{output_folder}/{projid}.ncdu.gz','wb') as csvfile:
+        csvfile.write( """[1,0,{{"progname":"{0}","progver":"{1}","timestamp":{2}}}""".format( "filesize2csv.py", 1.0, int(time.time())).encode())
+        for line in ncdu_json:
+            obj = json.loads(line)
+            dirs = obj["dirs"]
+            if not isinstance(dirs, list):
+                dirs = dirs.lstrip("/")
+                dirs = dirs.split("/") if dirs else []
+            etype = obj["type"]
+            del obj["dirs"]
+            del obj["type"]
+            adjust_depth(dirs, prev_dirs, csvfile)
+            if etype == "dir":
+                csvfile.write(",\n[{}".format(json.dumps(obj)).encode())
+                dirs.append(obj["name"])
+            else:
+                csvfile.write(",\n{}".format(json.dumps(obj)).encode())
+            prev_dirs = dirs
+
+        dirs = []
+        adjust_depth(dirs, prev_dirs, csvfile)
+        csvfile.write("]\n".encode())
+
+    prev_dirs = []
 
 
     #with open(f'{output_folder}/{projid}.exts.csv', 'w', encoding='utf-8') as csvfile:
@@ -174,6 +222,24 @@ def writecsv(filename, stats, colname, pattern=None):
 
 
 
+
+# Unflatten json to ncdu-format
+def compare_dirs(dirs, prev_dirs):
+    common_len = len(list(takewhile(lambda x: eq(*x), zip(dirs, prev_dirs))))
+    closed = len(prev_dirs) - common_len
+    opened = len(dirs) - common_len
+    return closed, opened
+
+def adjust_depth(dirs, prev_dirs, csvfile):
+    closed, opened = compare_dirs(dirs, prev_dirs)
+    if closed:
+        csvfile.write(("]"*closed).encode())
+    if opened:
+        for opened_dir in dirs[-opened:]:
+            csvfile.write(""",\n[{{"name":{},"asize":0,"dsize":0,"ino":0,"mtime":0}}""".format(json.dumps(opened_dir)).encode())
+
+
+
 # get options
 target = sys.argv[1]
 output_folder = sys.argv[2]
@@ -203,13 +269,18 @@ if os.path.isdir(target):
         filelist_dedup[projid] = filename
 
     # create a multithreading pool
-    pool = Pool(processes=threads)
 
     # distribute jobs
     print(f"Starting to parse.")
-    collected_stats = pool.map(summarize_file_size, filelist_dedup.values())
-    pool.close()
-    pool.join()
+    #multithreading = True
+    multithreading = False
+    if multithreading:
+        pool = Pool(processes=threads)
+        collected_stats = pool.map(summarize_file_size, filelist_dedup.values())
+        pool.close()
+        pool.join()
+    else:
+        collected_stats = [summarize_file_size(filelist_dedup['snic2021-22-1019'])]
 
     print(f"Parsing complete, making global statistics.")
     # loop through all saved exts and make a joint summary
