@@ -2,8 +2,11 @@
 
 import gzip
 import zlib
+#import zstd
+import zstandard
 import sys
 import re
+import io
 import os
 import pdb
 import time
@@ -12,13 +15,14 @@ from multiprocessing import Pool
 import string
 import json
 from itertools import takewhile
+from datetime import datetime
 from operator import eq
 
 #@profile
-def summarize_file_size(zipfile):
+def summarize_file_size(archive_file):
 
     # get proj name
-    projid = zipfile.split('%')[-1].split('.')[0]
+    projid = archive_file.split('%')[-1].split('.')[0]
 
     print(f"Parsing {projid}")
 
@@ -33,32 +37,30 @@ def summarize_file_size(zipfile):
     try:
 
         # open file
-        with gzip.open(zipfile, 'rb') as zf:
+        with open(archive_file, 'rb') as zf:
+
+            # decompress the stream and wrap it as a text stream
+            dctx = zstandard.ZstdDecompressor()
+            reader = dctx.stream_reader(zf)
+            text_stream = io.TextIOWrapper(reader, encoding='utf-8', errors='replace')
 
             # read it line by line
             i = 0
             t_prev = time.time()
-            for line in zf:
-
-                # convert to utf8
-                try:
-                    a = line.decode('utf-8').strip()
-                except UnicodeDecodeError:
-                    continue
-
+            for line in text_stream:
 
                 # find the pattern and pick out variables for readability
-                match = pattern.match(a)
+                match = pattern.match(line)
 
                 # skip not matching lines
                 if not match:
                     try:
-                        print(f"Did not match: {a}")
+                        print(f"Did not match: {line}")
                     except:
                         print("Did not match: non-UTF-8 chars in file, skipping line.")
                     continue
 
-                size, user, group, umask, date, n1, n2, n3, n4, path = match.groups()
+                size, user, group, umask, date, inode, disk_space, n3, n4, path = match.groups()
 
                 # Create ncdu compatible list
 
@@ -67,18 +69,18 @@ def summarize_file_size(zipfile):
                     filetype = "f"
 
                 if filetype == 'd' or int(size) > 10 * (1024**2):
+                #if True:
 
                     dirs_name = path.rsplit('/',1)
                     dirs = dirs_name[0]
                     name = dirs_name[1]
-                    pdb.set_trace()
 
                     ncdu_json.append("""{{"name":{},"asize":{},"dsize":{},"ino":{},"mtime":{},"type":"{}","dirs":{}}}\n""".format(
                             json.dumps(name),
                             size,
-                            int(size) * 1024,
-                            1,
-                            1,
+                            int(disk_space) * 1024,
+                            inode,
+                            datetime.strptime(date.split('.')[0],"%Y-%m-%dT%H:%M:%S").strftime("%s"),
                             "dir" if filetype == "d" else "file",
                             json.dumps(path and "{}{}".format(root, dirs) or root)))
 
@@ -252,11 +254,12 @@ except:
 # create output folder if needed
 os.makedirs(output_folder, exist_ok=True)
 
-# if target is a dir, run for all gz files in it
+# if target is a dir, run for all gz/zst files in it
 if os.path.isdir(target):
 
     # get the list of files
-    filelist = glob.glob(f"{target}/*.gz") + glob.glob(f"{target}/*.tmp")
+    #filelist = glob.glob(f"{target}/*.gz") + glob.glob(f"{target}/*.tmp")
+    filelist = glob.glob(f"{target}/*.zst") + glob.glob(f"{target}/*.tmp")
 
     # sort file list by file size to begin processing the large files first
     filelist = sorted(filelist, key=os.path.getsize, reverse=True)
@@ -272,15 +275,15 @@ if os.path.isdir(target):
 
     # distribute jobs
     print(f"Starting to parse.")
-    #multithreading = True
-    multithreading = False
+    multithreading = True
+    #multithreading = False
     if multithreading:
         pool = Pool(processes=threads)
         collected_stats = pool.map(summarize_file_size, filelist_dedup.values())
         pool.close()
         pool.join()
     else:
-        collected_stats = [summarize_file_size(filelist_dedup['snic2021-22-1019'])]
+        collected_stats = [summarize_file_size(list(filelist_dedup.values())[0])]
 
     print(f"Parsing complete, making global statistics.")
     # loop through all saved exts and make a joint summary
