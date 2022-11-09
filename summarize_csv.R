@@ -1,5 +1,6 @@
 options(scipen=999)
 library(RColorBrewer)
+library(gdata)
 setwd('/proj/staff/bjornv/filesize/')
 
 #  _                    _       _       _
@@ -9,7 +10,7 @@ setwd('/proj/staff/bjornv/filesize/')
 # |_____\___/ \__,_|\__,_|  \__,_|\__,_|\__\__,_|
 #
 # Load data
-filelist <-  list.files('/proj/staff/bjornv/filesize/out220506','*exts.csv$',full.names=T)
+filelist <-  list.files('/proj/staff/bjornv/filesize/out_zst','*exts.csv$',full.names=T)
 
 for(i in 1:length(filelist)) {
     curfile <- filelist[i]
@@ -41,6 +42,7 @@ for(i in 1:length(filelist)) {
         data_pie_freq[data_pie_freq$freq > 10,]
     }
 
+    # should we use gdata::humanReadable for this?
     sizeGB <- round(sum(data$size) / (1024^3),1)
 
     # skip projects with only 1 line
@@ -49,8 +51,9 @@ for(i in 1:length(filelist)) {
         next
     }
 
+    # get location of curfile
     # Settings 1 row 2 columns
-    png(paste0('out/',sub('\\.csv' ,'', basename(curfile)), '.png'),width=4000,height=2000,pointsize=30)
+    png(paste0(dirname(curfile), '/', sub('\\.csv' ,'', basename(curfile)), '.png'),width=4000,height=2000,pointsize=30)
     par(mfrow=c(1,2), mar=c(0,4,4,4), mai=c(0,1,2,1))
     
     # 1st pie
