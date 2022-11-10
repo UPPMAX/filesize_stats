@@ -3,28 +3,38 @@ library(doParallel,quietly=T)
 library(foreach,quietly=T)
 registerDoParallel(30)
 
-myargs = commandArgs(trailingOnly=TRUE)
-input <- myargs[1]
-output <- myargs[2]
+# Set parameters
+if (!('root_dir' %in% ls())) {
+    myargs = commandArgs(trailingOnly=TRUE)
+    root_dir <- myargs[1]
+}
 
-print(paste0('Output: ', output))
-print(paste0('Input: ', input))
 
-dir.create(paste0(output,'/project_plots'),showWarnings=F)
+print(paste0('root_dir: ', root_dir))
+
+work_dir <- "tmp"
+plot_dir <- 'plots'
+csv_dir <- 'csv'
+ncdu_dir <- 'ncdu'
+
+# Create directories
+dir.create(paste(root_dir,plot_dir, sep='/'),showWarnings=F)
+dir.create(paste(root_dir,csv_dir, sep='/'),showWarnings=F)
+
 
 # Load storage statistics
-read_stats_csv <- function(stat, colClass, min_size = 15, input) {
+read_stats_csv <- function(stat, colClass, min_size = 15, root_dir) {
 
-    filelist <- list.files(input,pattern=paste0('*',stat,'\\.csv'))
+    filelist <- list.files(paste(root_dir,work_dir,sep="/"),pattern=paste0('*',stat,'\\.csv'))
     filelist <- filelist[filelist != paste0('all.',stat,'.csv')]
-    filelist <- filelist[file.size(paste0(input,'/',filelist)) > min_size]
+    filelist <- filelist[file.size(paste(root_dir,work_dir,filelist, sep = '/')) > min_size]
     projectlist <- list()
     # Add all projects to a list
     projectlist <- foreach(i = 1:length(filelist)) %dopar%  {
     #for(i in 1:length(filelist)) {
         curfile <- filelist[i]
         cat(i,'/', length(filelist),  '\t',curfile,'\n')
-        projectlist[[i]] <- read.table(paste0(input, '/', curfile), 
+        projectlist[[i]] <- read.table(paste(root_dir,work_dir,curfile,sep='/'), 
                                         sep='\t', 
                                         header=T, 
                                         stringsAsFactors=F, 
@@ -38,6 +48,8 @@ read_stats_csv <- function(stat, colClass, min_size = 15, input) {
 
 }
 
+cat('\nStarting uppmax summary \n')
+
 #  _____      _                 _
 # | ____|_  _| |_ ___ _ __  ___(_) ___  _ __  ___
 # |  _| \ \/ / __/ _ \ '_ \/ __| |/ _ \| '_ \/ __|
@@ -47,12 +59,12 @@ read_stats_csv <- function(stat, colClass, min_size = 15, input) {
 # Extensions
 # Load 
 #file <- "/crex/proj/staff/bjornv/filesize/out.dahlo220531/perl/all.exts.csv"
-file <- paste0(input,"/all.exts.csv")
+file <- paste(root_dir, work_dir,"all.exts.csv",sep="/")
 all_extsum <- read.table(file,sep='\t',header=T,stringsAsFactors=F, colClasses=c('character','numeric','numeric'))
 all_extsum$sizeTB <- round(all_extsum$size / 1024^4 ,2)
 
 # For each project
-extlist <- read_stats_csv(stat = 'exts', colClass = 'character', min_size = 0, input=input)
+extlist <- read_stats_csv(stat = 'exts', colClass = 'character', min_size = 0, root_dir=root_dir)
 extsum <- data.frame(project=names(extlist),
                       size=sapply(extlist,function(x) {ifelse(nrow(x) != 0, sum(x[2]),0)}),
                       Freq=sapply(extlist,function(x) {ifelse(nrow(x) != 0, sum(x[3]),0)}),
@@ -69,7 +81,7 @@ extsum$sizeTB <- round(extsum$size / 1024^4,2)
 #   |_|\___|\__,_|_|
 #
 # Year
-yearlist <- read_stats_csv(stat = 'years', colClass = 'integer', min_size = 15, input=input)
+yearlist <- read_stats_csv(stat = 'years', colClass = 'integer', min_size = 15, root_dir=root_dir)
 yearsum <- data.frame(project=names(yearlist),stringsAsFactors=F)
 years <- sort(unique(unlist(sapply(yearlist,function(x) {unique(x$year)}))))
 for(year in years) {
@@ -85,7 +97,7 @@ colnames(yearsum) <- c('project',years)
 # |_____\___/ \___\__,_|\__|_|\___/|_| |_|___/
 #
 # Locations
-locationlist <- read_stats_csv(stat = 'locations', colClass = 'character', min_size = 19, input=input)
+locationlist <- read_stats_csv(stat = 'locations', colClass = 'character', min_size = 19, root_dir=root_dir)
 locationsum <- data.frame(project=names(locationlist),stringsAsFactors=F)
 for(location in c('backup','nobackup')) {
     locationsum <- cbind(locationsum,sapply(locationlist,function(x) {sum(x$size[x$location == location])} ))
@@ -97,11 +109,11 @@ proj_sum <- merge(extsum,yearsum,by=1,all.x=T,sort=F)
 proj_sum <- merge(proj_sum,locationsum,by=1,all.x=T,sort=F)
 
 
-prettysum <- function(X) {
-    sub(perl=T,'^\\s+','',format(sum(X),big.mark=' '))
-}
+#prettysum <- function(X) {
+#    sub(perl=T,'^\\s+','',format(sum(X),big.mark=' '))
+#}
 pretty <- function(X) {
-    sub(perl=T,'^\\s+','',format(X,big.mark=' '))
+    sub(perl=T,'^\\s+','',format(sum(X),big.mark=' '))
 }
 
 #  ____  _       _
@@ -111,7 +123,7 @@ pretty <- function(X) {
 # |_|   |_|\___/ \__|
 #
 # Plot pie chart
-png(paste0(output,'/all_projects_piechart.png'), width=3800, height=2000,pointsize=26)
+png(paste(root_dir,'plots/all_projects_piechart.png',sep='/'), width=3800, height=2000,pointsize=26)
 
 #projsizeTB <- round(sum(projsum$sizeTB),2)
 #extsizeTB <- round(sum(extsum$sizeTB),2)
@@ -125,7 +137,7 @@ main_line <- -3
 # 1st pie. Project size on uppmax
 pie(proj_sum$size,labels=paste0(proj_sum$project, ', ', round(proj_sum$sizeTB)),
     cex=1.2, col=RColorBrewer::brewer.pal(name='Set1',9),clockwise=T, init.angle=0,lty=0)
-#title(main=paste0("Project size , Tot: ", prettysum(round(proj_sum$sizeTB)), ' TB'), 
+#title(main=paste0("Project size , Tot: ", pretty(round(proj_sum$sizeTB)), ' TB'), 
 title(main=paste0("Project size , Tot: ", pretty(round(sum(proj_sum$size) / 1024^4)), ' TB'), 
       line=title_line,cex.main=2)
 
@@ -133,7 +145,7 @@ title(main=paste0("Project size , Tot: ", pretty(round(sum(proj_sum$size) / 1024
 projsum_pie_Freq <- proj_sum[order(proj_sum$Freq),]
 pie(projsum_pie_Freq$Freq,labels=paste0(projsum_pie_Freq$project, ', ', pretty(projsum_pie_Freq$Freq)),
     cex=1.2, col=RColorBrewer::brewer.pal(name='Set1',9),clockwise=F, init.angle=0,lty=0)
-title(main=paste0("Number of files per project, Tot: ", prettysum(projsum_pie_Freq$Freq)),
+title(main=paste0("Number of files per project, Tot: ", pretty(projsum_pie_Freq$Freq)),
       line=title_line,cex.main=2)
 
 # 3rd pie. Size per year
@@ -164,7 +176,7 @@ pie(all_extsum_pie_freq$freq[freqix],
     labels=paste0(all_extsum_pie_freq$ext[freqix], ', ', pretty(round(all_extsum_pie_freq$freq[freqix]))) , 
     col=RColorBrewer::brewer.pal(name='Set1',9),clockwise=T, 
     cex=1.2, init.angle=0,lty=0)
-title(main=paste0("Number of files by extension , Tot: ",prettysum(all_extsum_pie_freq$freq)),
+title(main=paste0("Number of files by extension , Tot: ",pretty(all_extsum_pie_freq$freq)),
       line=title_line,cex.main=2)
 
 # 6th pie. Backup nobackup
@@ -189,15 +201,16 @@ dev.off()
 # Write to file
 
 # Project summary
-write.table(proj_sum,file=paste0(output,'/all_projects_size.csv'), quote=F,sep='\t',row.names=F,col.names=T)
+write.table(proj_sum,file=paste(root_dir,csv_dir,'all_projects_size.csv',sep='/'), quote=F,sep='\t',row.names=F,col.names=T)
 proj_sum_gb <- proj_sum
 proj_sum_gb[,c(2,seq(5,ncol(proj_sum)))] <- round(proj_sum[,c(2,seq(5,ncol(proj_sum)))] / 1024^3)
-write.table(proj_sum_gb,file=paste0(output,'/all_projects_size_in_GB.csv'), quote=F,sep='\t',row.names=F,col.names=T)
+write.table(proj_sum_gb,file=paste(root_dir,csv_dir,'all_projects_size_in_GB.csv',sep='/'), quote=F,sep='\t',row.names=F,col.names=T)
 
 # Extension summary
-write.table(all_extsum_pie_size,file=paste0(output,'/all_extensions_size.csv'), quote=F,sep='\t',row.names=F,col.names=T)
+write.table(all_extsum_pie_size,file=paste(root_dir,csv_dir,'all_extensions_size.csv',sep='/'), quote=F,sep='\t',row.names=F,col.names=T)
 
-
+cat('Uppmax summary complete\n\n')
+cat('Starting per project summary\n')
 
 #  ____                             _           _
 # |  _ \ ___ _ __   _ __  _ __ ___ (_) ___  ___| |_
@@ -240,7 +253,7 @@ a <- foreach(project =  proj_sum$project) %dopar% {
        var(proj_extsum_pie_size$freq) == 0) return() 
 
     # Start plotting
-    png(paste0(output,'/project_plots/',project, '.png'),width=2500,height=2500,pointsize=30)
+    png(paste(root_dir,plot_dir,paste0(project, '.png'),sep='/'),width=2500,height=2500,pointsize=30)
     par(mfrow=c(2,2), mar=c(0,4,4,4), mai=c(0,1,2,1))
     title_line <- -2
     main_line <- -3
@@ -264,7 +277,7 @@ a <- foreach(project =  proj_sum$project) %dopar% {
         labels=paste0(proj_extsum_pie_freq$ext, ', ', pretty(round(proj_extsum_pie_freq$freq))) , 
         col=RColorBrewer::brewer.pal(name='Set1',9),clockwise=T, 
         cex=1.2, init.angle=0,lty=0)
-    title(main=paste0("Number of files by extension , Tot: ",sum(proj_extsum$freq)), line=title_line,cex.main=2)
+    title(main=paste0("Number of files by extension , Tot: ",pretty(proj_extsum$freq)), line=title_line,cex.main=2)
 
     # 3rd pie. Size per year
     pie(proj_yearsum$size,clockwise=T, 
@@ -284,7 +297,7 @@ a <- foreach(project =  proj_sum$project) %dopar% {
 }
 
 
-print('Finished. Thank you and have a nice day.')
+cat('Finished. Thank you and have a nice day.\n')
 
 
 
