@@ -17,7 +17,14 @@ import json
 from itertools import takewhile
 from datetime import datetime
 from operator import eq
+import numpy as np
 
+import time
+from calendar import timegm
+
+# uncomment @profile to profile the code to see where time is spent.
+# kernprof -l script_to_profile.py
+# python -m line_profiler script_to_profile.py.lprof
 #@profile
 def summarize_file_size(archive_file):
 
@@ -75,12 +82,19 @@ def summarize_file_size(archive_file):
                     dirs = dirs_name[0]
                     name = dirs_name[1]
 
+
+                    # convert timestamp of file to epoch time
+                    # using numpy for speed
+                    # https://www.geeksforgeeks.org/how-to-convert-numpy-datetime64-to-timestamp/
+                    np_dt = np.datetime64(date.split('.')[0])
+                    epoch_time = (np_dt - np.datetime64('1970-01-01T00:00:00Z')) / np.timedelta64(1, 's')
+
                     ncdu_json.append("""{{"name":{},"asize":{},"dsize":{},"ino":{},"mtime":{},"type":"{}","dirs":{}}}\n""".format(
                             json.dumps(name),
                             size,
                             int(disk_space) * 1024,
                             inode,
-                            datetime.strptime(date.split('.')[0],"%Y-%m-%dT%H:%M:%S").strftime("%s"),
+                            epoch_time,
                             "dir" if filetype == "d" else "file",
                             json.dumps(path and "{}{}".format(root, dirs) or root)))
 
@@ -153,16 +167,16 @@ def summarize_file_size(archive_file):
     except EOFError:
         print(f"ERROR: EOFError while reading file {zipfil}")
 
-    writecsv(f'{output_folder}/{projid}.exts.csv', exts, 'ext', re.compile('[\W]+'))
-    writecsv(f'{output_folder}/{projid}.years.csv', years, 'year')
-    writecsv(f'{output_folder}/{projid}.locations.csv', locations, 'location')
+    writecsv(f'{root_dir}/{csv_dir}/{projid}.exts.csv', exts, 'ext', re.compile('[\W]+'))
+    writecsv(f'{root_dir}/{csv_dir}/{projid}.years.csv', years, 'year')
+    writecsv(f'{root_dir}/{csv_dir}/{projid}.locations.csv', locations, 'location')
 
 
     # Stolen from https://github.com/wodny/ncdu-export
     # Write ncdu compatible output format for all files
     prev_dirs = []
 
-    with gzip.open(f'{output_folder}/{projid}.ncdu.gz','wb') as csvfile:
+    with gzip.open(f'{root_dir}/{ncdu_dir}/{projid}.ncdu.gz','wb') as csvfile:
         csvfile.write( """[1,0,{{"progname":"{0}","progver":"{1}","timestamp":{2}}}""".format( "filesize2csv.py", 1.0, int(time.time())).encode())
         for line in ncdu_json:
             obj = json.loads(line)
@@ -188,7 +202,7 @@ def summarize_file_size(archive_file):
     prev_dirs = []
 
 
-    #with open(f'{output_folder}/{projid}.exts.csv', 'w', encoding='utf-8') as csvfile:
+    #with open(f'{root_dir}/{projid}.exts.csv', 'w', encoding='utf-8') as csvfile:
     #    csvfile.write("ext\tsize\tfreq\n")
     #    pattern = re.compile('[\W]+')
     #    for ext,row in exts.items():
@@ -196,12 +210,12 @@ def summarize_file_size(archive_file):
     #        ext_sanitized = pattern.sub('', ext)
     #        csvfile.write(f"{ext_sanitized}\t{row[0]}\t{row[1]}\n")
 
-    #with open(f'{output_folder}/{projid}.years.csv', 'w', encoding='utf-8') as csvfile:
+    #with open(f'{root_dir}/{projid}.years.csv', 'w', encoding='utf-8') as csvfile:
     #    csvfile.write("year\tsize\tfreq\n")
     #    for year,row in years.items():
     #        csvfile.write(f"{year}\t{row[0]}\t{row[1]}\n")
 
-    #with open(f'{output_folder}/{projid}.location.csv', 'w', encoding='utf-8') as csvfile:
+    #with open(f'{root_dir}/{projid}.location.csv', 'w', encoding='utf-8') as csvfile:
     #    csvfile.write("backup\tsize\tfreq\n")
     #    for location,row in locations.items():
     #        csvfile.write(f"{location}\t{row[0]}\t{row[1]}\n")
@@ -244,15 +258,21 @@ def adjust_depth(dirs, prev_dirs, csvfile):
 
 # get options
 target = sys.argv[1]
-output_folder = sys.argv[2]
+root_dir = sys.argv[2]
 
 try:
     threads = int(sys.argv[3])
 except:
     threads = 1
 
+# set options
+csv_dir = 'tmp'
+ncdu_dir = 'ncdu'
+
 # create output folder if needed
-os.makedirs(output_folder, exist_ok=True)
+os.makedirs(root_dir, exist_ok=True)
+os.makedirs(f"{root_dir}/{csv_dir}", exist_ok=True)
+os.makedirs(f"{root_dir}/{ncdu_dir}", exist_ok=True)
 
 # if target is a dir, run for all gz/zst files in it
 if os.path.isdir(target):
@@ -262,7 +282,7 @@ if os.path.isdir(target):
     filelist = glob.glob(f"{target}/*.zst") + glob.glob(f"{target}/*.tmp")
 
     # sort file list by file size to begin processing the large files first
-    filelist = sorted(filelist, key=os.path.getsize, reverse=True)
+#    filelist = sorted(filelist, key=os.path.getsize, reverse=True)
 
     # Remove duplicated projects
     filelist_dedup = {}
@@ -279,7 +299,8 @@ if os.path.isdir(target):
     #multithreading = False
     if multithreading:
         pool = Pool(processes=threads)
-        collected_stats = pool.map(summarize_file_size, filelist_dedup.values())
+        #collected_stats = pool.map(summarize_file_size, filelist_dedup.values())
+        collected_stats = pool.imap_unordered(summarize_file_size, filelist_dedup.values(), chunksize=1)
         pool.close()
         pool.join()
     else:
@@ -326,13 +347,13 @@ if os.path.isdir(target):
                 all_locations[location].append(row[1])
 
 
-    writecsv(f"{output_folder}/all.exts.csv", all_exts, "ext", re.compile('[\W]+'))
-    writecsv(f"{output_folder}/all.years.csv", all_years, "year")
-    writecsv(f"{output_folder}/all.locations.csv", all_locations, "location")
+    writecsv(f"{root_dir}/{csv_dir}/all.exts.csv", all_exts, "ext", re.compile('[\W]+'))
+    writecsv(f"{root_dir}/{csv_dir}/all.years.csv", all_years, "year")
+    writecsv(f"{root_dir}/{csv_dir}/all.locations.csv", all_locations, "location")
 
 
 
-    #with open(f'{output_folder}/all.csv', 'w', encoding='utf-8') as csvfile:
+    #with open(f'{root_dir}/{csv_dir}/all.csv', 'w', encoding='utf-8') as csvfile:
 
     #    csvfile.write("ext\tsize\tfreq\n")
     #    pattern = re.compile('[\W]+')
