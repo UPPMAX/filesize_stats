@@ -30,8 +30,8 @@ read_stats_csv <- function(stat, colClass, min_size = 15, root_dir) {
     filelist <- filelist[file.size(paste(root_dir,work_dir,filelist, sep = '/')) > min_size]
     projectlist <- list()
     # Add all projects to a list
-    projectlist <- foreach(i = 1:length(filelist)) %dopar%  {
-    #for(i in 1:length(filelist)) {
+    #projectlist <- foreach(i = 1:length(filelist)) %dopar%  {
+    for(i in 1:length(filelist)) {
         curfile <- filelist[i]
         cat(i,'/', length(filelist),  '\t',curfile,'\n')
         projectlist[[i]] <- read.table(paste(root_dir,work_dir,curfile,sep='/'), 
@@ -113,7 +113,7 @@ proj_sum <- merge(proj_sum,locationsum,by=1,all.x=T,sort=F)
 #    sub(perl=T,'^\\s+','',format(sum(X),big.mark=' '))
 #}
 pretty <- function(X) {
-    sub(perl=T,'^\\s+','',format(sum(X),big.mark=' '))
+    sub(perl=T,'^\\s+','',format(X,big.mark=' '))
 }
 
 #  ____  _       _
@@ -145,7 +145,7 @@ title(main=paste0("Project size , Tot: ", pretty(round(sum(proj_sum$size) / 1024
 projsum_pie_Freq <- proj_sum[order(proj_sum$Freq),]
 pie(projsum_pie_Freq$Freq,labels=paste0(projsum_pie_Freq$project, ', ', pretty(projsum_pie_Freq$Freq)),
     cex=1.2, col=RColorBrewer::brewer.pal(name='Set1',9),clockwise=F, init.angle=0,lty=0)
-title(main=paste0("Number of files per project, Tot: ", pretty(projsum_pie_Freq$Freq)),
+title(main=paste0("Number of files per project, Tot: ", pretty(sum(projsum_pie_Freq$Freq))),
       line=title_line,cex.main=2)
 
 # 3rd pie. Size per year
@@ -153,7 +153,7 @@ year_sum <- rev(apply(proj_sum[,5:(ncol(proj_sum)-2)],2,sum,na.rm=T))
 pie(year_sum,clockwise=T, 
     labels=paste0(names(year_sum), ', ', round(year_sum / 1024^5,1)) ,
     init.angle=0, 
-    col= RColorBrewer::brewer.pal(name='Set1',length(years)))
+    col= RColorBrewer::brewer.pal(name='Set1',9))
 title(main="File size by file date (PB)", sub='Based of file modification date', 
       line=title_line,cex.main=2)
 
@@ -176,7 +176,7 @@ pie(all_extsum_pie_freq$freq[freqix],
     labels=paste0(all_extsum_pie_freq$ext[freqix], ', ', pretty(round(all_extsum_pie_freq$freq[freqix]))) , 
     col=RColorBrewer::brewer.pal(name='Set1',9),clockwise=T, 
     cex=1.2, init.angle=0,lty=0)
-title(main=paste0("Number of files by extension , Tot: ",pretty(all_extsum_pie_freq$freq)),
+title(main=paste0("Number of files by extension , Tot: ",pretty(sum(all_extsum_pie_freq$freq))),
       line=title_line,cex.main=2)
 
 # 6th pie. Backup nobackup
@@ -220,8 +220,8 @@ cat('Starting per project summary\n')
 #                  |_|           |__/
 # Per project
 
-a <- foreach(project =  proj_sum$project) %dopar% {
-#for(project in proj_sum$project) {
+#a <- foreach(project =  proj_sum$project) %dopar% {
+for(project in proj_sum$project) {
     # Get indexies for each project
     ix <- which(proj_sum$project == project)
     ixextlist <-  which(names(extlist) == project)
@@ -264,7 +264,7 @@ a <- foreach(project =  proj_sum$project) %dopar% {
     if(nrow(proj_extsum_pie_size) < 2) return() 
 
     pie(proj_extsum_pie_size$size,
-        labels=paste0(proj_extsum_pie_size$ext,', ', pretty(round(proj_extsum_pie_size$sizeGB))),
+        labels=paste0(proj_extsum_pie_size$ext,', ', pretty(round(proj_extsum_pie_size$sizeGB,1))),
         col=RColorBrewer::brewer.pal(name='Set1',9),clockwise=T, 
         cex=1.2, init.angle=0,lty=0)
     title(main=paste0("Extension size , Tot: ",pretty(round(sum(proj_extsum$size) / 1024^3,1)), ' GB'), line=title_line,cex.main=2)
@@ -277,13 +277,13 @@ a <- foreach(project =  proj_sum$project) %dopar% {
         labels=paste0(proj_extsum_pie_freq$ext, ', ', pretty(round(proj_extsum_pie_freq$freq))) , 
         col=RColorBrewer::brewer.pal(name='Set1',9),clockwise=T, 
         cex=1.2, init.angle=0,lty=0)
-    title(main=paste0("Number of files by extension , Tot: ",pretty(proj_extsum$freq)), line=title_line,cex.main=2)
+    title(main=paste0("Number of files by extension , Tot: ",pretty(sum(proj_extsum$freq))), line=title_line,cex.main=2)
 
     # 3rd pie. Size per year
     pie(proj_yearsum$size,clockwise=T, 
         labels=paste0(proj_yearsum$years, ', ', pretty(round(proj_yearsum$size / 1024^3,1))) ,
         init.angle=0, 
-        col= RColorBrewer::brewer.pal(name='Set1',length(years)))
+        col= RColorBrewer::brewer.pal(name='Set1',9))
     title(main="File size by file date (GB)", sub='Based of file modification date', line=title_line,cex.main=2)
 
     # 4th pie. Backup nobackup
