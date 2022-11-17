@@ -18,6 +18,8 @@ from itertools import takewhile
 from datetime import datetime
 from operator import eq
 import numpy as np
+import argparse
+from collections import defaultdict
 
 import time
 from calendar import timegm
@@ -31,12 +33,33 @@ def summarize_file_size(archive_file):
     # get proj name
     projid = archive_file.split('%')[-1].split('.')[0]
 
+    # check if result files already exist
+    files_to_check = [  f'{root_dir}/{csv_dir}/{projid}.exts.csv',
+                        f'{root_dir}/{csv_dir}/{projid}.years.csv',
+                        f'{root_dir}/{csv_dir}/{projid}.locations.csv',
+                        f'{root_dir}/{ncdu_dir}/{projid}.ncdu.gz',
+                    ]
+    skip_file = False
+    existing_files = []
+    for file_to_check in files_to_check:
+        if os.path.exists(file_to_check):
+            existing_files.append(file_to_check)
+            skip_file = True
+
+    # skip this file
+    if skip_file and not force:
+        print(f'Skipping {projid}, output file(s) already exists: {", ".join(existing_files)}')
+        # return empty dicts
+        return [{}, {}, {}]
+
     print(f"Parsing {projid}")
 
     # init
     exts = {}
     years = {}
     locations = {}
+    factory = lambda: defaultdict(factory)
+    users = factory()
     root = "<root>"
     ncdu_json = []
     pattern = re.compile('(\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (.+)$')
@@ -75,28 +98,28 @@ def summarize_file_size(archive_file):
                 if umask.split('/')[1].startswith('-'):
                     filetype = "f"
 
-                if filetype == 'd' or int(size) > 10 * (1024**2):
+                #if filetype == 'd' or int(size) > 10 * (1024**2):
                 #if True:
 
-                    dirs_name = path.rsplit('/',1)
-                    dirs = dirs_name[0]
-                    name = dirs_name[1]
+                dirs_name = path.rsplit('/',1)
+                dirs = dirs_name[0]
+                name = dirs_name[1]
 
 
-                    # convert timestamp of file to epoch time
-                    # using numpy for speed
-                    # https://www.geeksforgeeks.org/how-to-convert-numpy-datetime64-to-timestamp/
-                    np_dt = np.datetime64(date.split('.')[0])
-                    epoch_time = (np_dt - np.datetime64('1970-01-01T00:00:00Z')) / np.timedelta64(1, 's')
+                # convert timestamp of file to epoch time
+                # using numpy for speed
+                # https://www.geeksforgeeks.org/how-to-convert-numpy-datetime64-to-timestamp/
+                np_dt = np.datetime64(date.split('.')[0])
+                epoch_time = int((np_dt - np.datetime64('1970-01-01T00:00:00')) / np.timedelta64(1, 's'))
 
-                    ncdu_json.append("""{{"name":{},"asize":{},"dsize":{},"ino":{},"mtime":{},"type":"{}","dirs":{}}}\n""".format(
-                            json.dumps(name),
-                            size,
-                            int(disk_space) * 1024,
-                            inode,
-                            epoch_time,
-                            "dir" if filetype == "d" else "file",
-                            json.dumps(path and "{}{}".format(root, dirs) or root)))
+                ncdu_json.append("""{{"name":{},"asize":{},"dsize":{},"ino":{},"mtime":{},"type":"{}","dirs":{}}}\n""".format(
+                        json.dumps(name),
+                        size,
+                        int(disk_space) * 1024,
+                        inode,
+                        epoch_time,
+                        "dir" if filetype == "d" else "file",
+                        json.dumps(path and "{}{}".format(root, dirs) or root)))
 
                 # check if dir
                 if umask.split('/')[1].startswith('d'):
@@ -126,6 +149,15 @@ def summarize_file_size(archive_file):
                     exts[ext].append(int(size))
                     exts[ext].append(1)
 
+                # save user specific
+                try:
+                    users[user]['exts'][ext][0] += int(size)
+                    users[user]['exts'][ext][1] += 1
+                except TypeError:
+                    users[user]['exts'][ext] = []
+                    users[user]['exts'][ext].append(int(size))
+                    users[user]['exts'][ext].append(1)
+
 
                 # Save year of file
                 file_year = date[0:4]
@@ -140,6 +172,17 @@ def summarize_file_size(archive_file):
                     years[file_year] = []
                     years[file_year].append(int(size))
                     years[file_year].append(1)
+
+                # save user specific
+                try:
+                    users[user]['years'][file_year][0] += int(size)
+                    users[user]['years'][file_year][1] += 1
+                except TypeError:
+                    users[user]['years'][file_year] = []
+                    users[user]['years'][file_year].append(int(size))
+                    users[user]['years'][file_year].append(1)
+
+
 
                 # Check if backed up
                 file_location = 'backup'
@@ -156,6 +199,18 @@ def summarize_file_size(archive_file):
                     locations[file_location] = []
                     locations[file_location].append(int(size))
                     locations[file_location].append(1)
+
+                # save user specific
+                try:
+                    users[user]['locations'][file_location][0] += int(size)
+                    users[user]['locations'][file_location][1] += 1
+                except TypeError:
+                    users[user]['locations'][file_location] = []
+                    users[user]['locations'][file_location].append(int(size))
+                    users[user]['locations'][file_location].append(1)
+
+                #pdb.set_trace()
+
 
 
     # skip empty files
@@ -176,8 +231,18 @@ def summarize_file_size(archive_file):
     # Write ncdu compatible output format for all files
     prev_dirs = []
 
-    with gzip.open(f'{root_dir}/{ncdu_dir}/{projid}.ncdu.gz','wb') as csvfile:
-        csvfile.write( """[1,0,{{"progname":"{0}","progver":"{1}","timestamp":{2}}}""".format( "filesize2csv.py", 1.0, int(time.time())).encode())
+
+
+#  _   _  ____ ____  _   _
+# | \ | |/ ___|  _ \| | | |
+# |  \| | |   | | | | | | |
+# | |\  | |___| |_| | |_| |
+# |_| \_|\____|____/ \___/
+#
+# NCDU
+
+    with gzip.open(f'{root_dir}/{ncdu_dir}/{projid}.ncdu.gz','wb') as gzfile:
+        gzfile.write( """[1,0,{{"progname":"{0}","progver":"{1}","timestamp":{2}}}""".format( "filesize2csv.py", 1.0, int(time.time())).encode())
         for line in ncdu_json:
             obj = json.loads(line)
             dirs = obj["dirs"]
@@ -187,19 +252,78 @@ def summarize_file_size(archive_file):
             etype = obj["type"]
             del obj["dirs"]
             del obj["type"]
-            adjust_depth(dirs, prev_dirs, csvfile)
+            adjust_depth(dirs, prev_dirs, gzfile)
             if etype == "dir":
-                csvfile.write(",\n[{}".format(json.dumps(obj)).encode())
+                gzfile.write(",\n[{}".format(json.dumps(obj)).encode())
                 dirs.append(obj["name"])
             else:
-                csvfile.write(",\n{}".format(json.dumps(obj)).encode())
+                gzfile.write(",\n{}".format(json.dumps(obj)).encode())
             prev_dirs = dirs
 
         dirs = []
-        adjust_depth(dirs, prev_dirs, csvfile)
-        csvfile.write("]\n".encode())
+        adjust_depth(dirs, prev_dirs, gzfile)
+        gzfile.write("]\n".encode())
 
     prev_dirs = []
+
+
+
+#  ____  _____ ____    _   _ ____  _____ ____
+# |  _ \| ____|  _ \  | | | / ___|| ____|  _ \
+# | |_) |  _| | |_) | | | | \___ \|  _| | |_) |
+# |  __/| |___|  _ <  | |_| |___) | |___|  _ <
+# |_|   |_____|_| \_\  \___/|____/|_____|_| \_\
+#
+# PER USER
+
+    # write the user specific files
+    for user in users.keys():
+
+        # print each stat
+
+        for stat_name,stat in users[user].items():
+
+
+
+            pdb.set_trace()
+
+
+
+
+# projid.json
+# 
+# projid.user.years
+# projid.user.locations
+# projid.user.exts
+# 
+# projid.years
+# projid.locations
+# projid.exts
+
+
+
+
+
+
+
+
+
+
+
+#  ____   _____        ___   _ ____ _____ ____  _____    _    __  __
+# |  _ \ / _ \ \      / / \ | / ___|_   _|  _ \| ____|  / \  |  \/  |
+# | | | | | | \ \ /\ / /|  \| \___ \ | | | |_) |  _|   / _ \ | |\/| |
+# | |_| | |_| |\ V  V / | |\  |___) || | |  _ <| |___ / ___ \| |  | |
+# |____/ \___/  \_/\_/  |_| \_|____/ |_| |_| \_\_____/_/   \_\_|  |_|
+#
+# DOWNSTREAM
+
+    # print the format to be used by downstream analysis, everything divided per user and in 1 file
+
+
+
+
+
 
 
     #with open(f'{root_dir}/{projid}.exts.csv', 'w', encoding='utf-8') as csvfile:
@@ -225,6 +349,11 @@ def summarize_file_size(archive_file):
 
 
 def writecsv(filename, stats, colname, pattern=None):
+    """
+    Wrapper function to write csv files.
+    If a regex pattern is given it will find and remove it from the value before printing.
+    Used mainly to remove any non-word ([\W]+) character from file endings.
+    """
     with open(filename, 'w', encoding='utf-8') as csvfile:
 
         csvfile.write(f"{colname}\tsize\tfreq\n")
@@ -257,13 +386,20 @@ def adjust_depth(dirs, prev_dirs, csvfile):
 
 
 # get options
-target = sys.argv[1]
-root_dir = sys.argv[2]
+parser = argparse.ArgumentParser(
+                    prog = 'filesize2csv',
+                    description = 'Converts the output from a find command to csv files to be used downstream.')
+parser.add_argument('input', help="Input file or directory containing multiple files.")
+parser.add_argument('output', help="Directory where output files and folders will be created.")
+parser.add_argument('-t', '--threads', type=int, default=1, help="How many threads to use when parsing files. (Default 1)")
+parser.add_argument('-f', '--force', action='store_true', help="Overwrite already existing output files.")
+args = parser.parse_args()
 
-try:
-    threads = int(sys.argv[3])
-except:
-    threads = 1
+# rename
+target = args.input
+root_dir = args.output
+threads = args.threads
+force = args.force
 
 # set options
 csv_dir = 'tmp'
@@ -282,7 +418,7 @@ if os.path.isdir(target):
     filelist = glob.glob(f"{target}/*.zst") + glob.glob(f"{target}/*.tmp")
 
     # sort file list by file size to begin processing the large files first
-#    filelist = sorted(filelist, key=os.path.getsize, reverse=True)
+    filelist = sorted(filelist, key=os.path.getsize, reverse=True)
 
     # Remove duplicated projects
     filelist_dedup = {}
