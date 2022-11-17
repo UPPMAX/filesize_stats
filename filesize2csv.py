@@ -34,9 +34,9 @@ def summarize_file_size(archive_file):
     projid = archive_file.split('%')[-1].split('.')[0]
 
     # check if result files already exist
-    files_to_check = [  f'{root_dir}/{csv_dir}/{projid}.exts.csv',
-                        f'{root_dir}/{csv_dir}/{projid}.years.csv',
-                        f'{root_dir}/{csv_dir}/{projid}.locations.csv',
+    files_to_check = [  f'{root_dir}/{tmp_dir}/{projid}.exts.csv',
+                        f'{root_dir}/{tmp_dir}/{projid}.years.csv',
+                        f'{root_dir}/{tmp_dir}/{projid}.locations.csv',
                         f'{root_dir}/{ncdu_dir}/{projid}.ncdu.gz',
                     ]
     skip_file = False
@@ -222,9 +222,9 @@ def summarize_file_size(archive_file):
     except EOFError:
         print(f"ERROR: EOFError while reading file {zipfil}")
 
-    writecsv(f'{root_dir}/{csv_dir}/{projid}.exts.csv', exts, 'ext', re.compile('[\W]+'))
-    writecsv(f'{root_dir}/{csv_dir}/{projid}.years.csv', years, 'year')
-    writecsv(f'{root_dir}/{csv_dir}/{projid}.locations.csv', locations, 'location')
+    writecsv(f'{root_dir}/{tmp_dir}/{projid}.exts.csv', exts, 'ext', re.compile('[\W]+'))
+    writecsv(f'{root_dir}/{tmp_dir}/{projid}.years.csv', years, 'year')
+    writecsv(f'{root_dir}/{tmp_dir}/{projid}.locations.csv', locations, 'location')
 
 
     # Stolen from https://github.com/wodny/ncdu-export
@@ -283,10 +283,24 @@ def summarize_file_size(archive_file):
 
         for stat_name,stat in users[user].items():
 
+            # calculate user percentage of total project storage usage
+            proj_tot_storage = sum( [ sizefreq[0] for sizefreq in locals()[stat_name].values() ])
+            user_tot_storage = sum( [ sizefreq[0] for sizefreq in stat.values() ])
+
+            # save as a zero filled 3-digit string of the number
+            user_percent_storage = str(int(round(user_tot_storage / proj_tot_storage, 2) * 100 )).zfill(3)
+            
+            # open a file handle
+            with open(f'{root_dir}/{csv_dir}/{projid}.{user_percent_storage}.{user}.{stat_name}.csv', 'w', encoding='utf-8') as csvfile:
 
 
-            pdb.set_trace()
+                # print metadata and header
+                csvfile.write(f"Project:\t{projid}\nUser:\t\t{user}\n%tot\t\t{int(user_percent_storage)}%\n\n")
+                csvfile.write(f"{stat_name}\tsize\tfreq\n")
 
+                # print the stats in sorted order
+                for row_name,row in sorted(stat.items(), key=lambda e: e[1][0], reverse=True):
+                    csvfile.write(f"{row_name}\t{row[0]}\t{row[1]}\n")
 
 
 
@@ -402,12 +416,14 @@ threads = args.threads
 force = args.force
 
 # set options
-csv_dir = 'tmp'
+csv_dir = 'csv'
+tmp_dir = 'tmp'
 ncdu_dir = 'ncdu'
 
 # create output folder if needed
 os.makedirs(root_dir, exist_ok=True)
 os.makedirs(f"{root_dir}/{csv_dir}", exist_ok=True)
+os.makedirs(f"{root_dir}/{tmp_dir}", exist_ok=True)
 os.makedirs(f"{root_dir}/{ncdu_dir}", exist_ok=True)
 
 # if target is a dir, run for all gz/zst files in it
@@ -483,13 +499,13 @@ if os.path.isdir(target):
                 all_locations[location].append(row[1])
 
 
-    writecsv(f"{root_dir}/{csv_dir}/all.exts.csv", all_exts, "ext", re.compile('[\W]+'))
-    writecsv(f"{root_dir}/{csv_dir}/all.years.csv", all_years, "year")
-    writecsv(f"{root_dir}/{csv_dir}/all.locations.csv", all_locations, "location")
+    writecsv(f"{root_dir}/{tmp_dir}/all.exts.csv", all_exts, "ext", re.compile('[\W]+'))
+    writecsv(f"{root_dir}/{tmp_dir}/all.years.csv", all_years, "year")
+    writecsv(f"{root_dir}/{tmp_dir}/all.locations.csv", all_locations, "location")
 
 
 
-    #with open(f'{root_dir}/{csv_dir}/all.csv', 'w', encoding='utf-8') as csvfile:
+    #with open(f'{root_dir}/{tmp_dir}/all.csv', 'w', encoding='utf-8') as csvfile:
 
     #    csvfile.write("ext\tsize\tfreq\n")
     #    pattern = re.compile('[\W]+')
