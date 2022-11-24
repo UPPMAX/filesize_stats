@@ -30,8 +30,8 @@ read_stats_csv <- function(stat, colClass, min_size = 15, root_dir) {
     filelist <- filelist[file.size(paste(root_dir,work_dir,filelist, sep = '/')) > min_size]
     projectlist <- list()
     # Add all projects to a list
-    #projectlist <- foreach(i = 1:length(filelist)) %dopar%  {
-    for(i in 1:length(filelist)) {
+    projectlist <- foreach(i = 1:length(filelist)) %dopar%  {
+    #for(i in 1:length(filelist)) {
         curfile <- filelist[i]
         cat(i,'/', length(filelist),  '\t',curfile,'\n')
         projectlist[[i]] <- read.table(paste(root_dir,work_dir,curfile,sep='/'), 
@@ -220,8 +220,8 @@ cat('Starting per project summary\n')
 #                  |_|           |__/
 # Per project
 
-#a <- foreach(project =  proj_sum$project) %dopar% {
-for(project in proj_sum$project) {
+a <- foreach(project =  proj_sum$project) %dopar% {
+#for(project in proj_sum$project) {
     # Get indexies for each project
     ix <- which(proj_sum$project == project)
     ixextlist <-  which(names(extlist) == project)
