@@ -20,7 +20,6 @@ from operator import eq
 import numpy as np
 import argparse
 from collections import defaultdict
-
 import time
 from calendar import timegm
 
@@ -50,7 +49,7 @@ def summarize_file_size(archive_file):
     if skip_file and not force:
         print(f'Skipping {projid}, output file(s) already exists: {", ".join(existing_files)}')
         # return empty dicts
-        return [{}, {}, {}]
+        return [None, {}, {}, {}, {}]
 
     print(f"Parsing {projid}")
 
@@ -218,6 +217,8 @@ def summarize_file_size(archive_file):
 #        print(f"Skipping empty file: {projid}")
 #        return
 
+    # skip empty projects
+
     # write the csv files
     except EOFError:
         print(f"ERROR: EOFError while reading file {zipfil}")
@@ -287,8 +288,16 @@ def summarize_file_size(archive_file):
             proj_tot_storage = sum( [ sizefreq[0] for sizefreq in locals()[stat_name].values() ])
             user_tot_storage = sum( [ sizefreq[0] for sizefreq in stat.values() ])
 
-            # save as a zero filled 3-digit string of the number
-            user_percent_storage = str(int(round(user_tot_storage / proj_tot_storage, 2) * 100 )).zfill(3)
+            try:
+                # save as a zero filled 3-digit string of the number
+                user_percent_storage = str(int(round(user_tot_storage / proj_tot_storage, 2) * 100 )).zfill(3)
+
+            # if the project has no files proj_tot_storage will be 0, resulting in a DivideByZeroError
+            except Exception:
+
+                # set user percentage to zero and continue
+                user_percent_storage = "000"
+
             
             # open a file handle
             with open(f'{root_dir}/{csv_dir}/{projid}.{user_percent_storage}.{user}.{stat_name}.csv', 'w', encoding='utf-8') as csvfile:
@@ -359,7 +368,9 @@ def summarize_file_size(archive_file):
     #        csvfile.write(f"{location}\t{row[0]}\t{row[1]}\n")
 
     print(f"Finished {projid}")
-    return [exts, years, locations]
+
+    # return all data, converting the defaultdict to regular dict in the process
+    return [projid, exts, years, locations, defaultdict_to_regulardict(users)]
 
 
 def writecsv(filename, stats, colname, pattern=None):
@@ -397,6 +408,14 @@ def adjust_depth(dirs, prev_dirs, csvfile):
         for opened_dir in dirs[-opened:]:
             csvfile.write(""",\n[{{"name":{},"asize":0,"dsize":0,"ino":0,"mtime":0}}""".format(json.dumps(opened_dir)).encode())
 
+
+def defaultdict_to_regulardict(d):
+    """
+    Converts nested, or not, defaultdicts to regular dicts.
+    """
+    if isinstance(d, defaultdict):
+        d = {k: defaultdict_to_regulardict(v) for k, v in d.items()}
+    return d
 
 
 # get options
@@ -459,11 +478,13 @@ if os.path.isdir(target):
         collected_stats = [summarize_file_size(list(filelist_dedup.values())[0])]
 
     print(f"Parsing complete, making global statistics.")
+#    pdb.set_trace()
     # loop through all saved exts and make a joint summary
     all_exts = {}
     all_years = {}
     all_locations = {}
-    for exts, years, locations in collected_stats:
+    all_users = {}
+    for projid, exts, years, locations, users in collected_stats:
 
         for ext, row in exts.items():
             # save the stats
@@ -499,10 +520,15 @@ if os.path.isdir(target):
                 all_locations[location].append(row[1])
 
 
+        if projid:
+            all_users[projid] = users
+
     writecsv(f"{root_dir}/{tmp_dir}/all.exts.csv", all_exts, "ext", re.compile('[\W]+'))
     writecsv(f"{root_dir}/{tmp_dir}/all.years.csv", all_years, "year")
     writecsv(f"{root_dir}/{tmp_dir}/all.locations.csv", all_locations, "location")
 
+    with open(f"{root_dir}/data_dump.json", 'w') as json_file:
+        json_file.write(json.dumps(all_users))
 
 
     #with open(f'{root_dir}/{tmp_dir}/all.csv', 'w', encoding='utf-8') as csvfile:
