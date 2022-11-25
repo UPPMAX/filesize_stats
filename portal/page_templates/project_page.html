@@ -25,12 +25,45 @@
 
 
 
-
-
-
-
-
 {% block body %}
+            <!-- Features section-->
+            <section class="py-5" id="features">
+                <div class="container px-5 my-5">
+                    <div class="row gx-5">
+                        <div class="col-lg-8 col-xl-6">
+                            <div class="text-center">
+                                <h2 class="fw-bolder">User list</h2>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row gx-5">
+                        <table id="datatable" class="table table-striped table-bordered" style="width:100%">
+                            <thead>
+                                <tr>
+                                    <td>User</td>
+                                    <td>Usage</td>
+                                    <td>%Project</td>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for user, size in user_size | dictsort(by='value', reverse=True) %}
+                                <tr>
+                                    <td>{{ user }}</td>
+                                    <td>{{ size | filesizeformat(binary=True) }}</td>
+                                    <td>{{ (size / project_size * 100) | round(precision=1) }}%</td>
+                                </tr>
+                                {% endfor %}
+
+                        </table>
+                    </div>
+            </section>
+{% endblock body %}
+
+
+
+
+
+{% block body1 %}
             <!-- Features section-->
             <section class="py-5" id="features">
                 <div class="container px-5 my-5">
@@ -177,4 +210,4 @@
                     </aside>
                 </div>
             </section>
-{% endblock body %}
+{% endblock body1 %}
