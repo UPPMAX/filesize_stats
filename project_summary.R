@@ -1,6 +1,7 @@
 options(scipen=999)
 library(doParallel,quietly=T)
 library(foreach,quietly=T)
+library(Cairo)
 registerDoParallel(30)
 
 # Set parameters
@@ -14,11 +15,13 @@ print(paste0('root_dir: ', root_dir))
 
 work_dir <- "tmp"
 plot_dir <- 'plots'
+plot_web_dir <- 'plots_web'
 csv_dir <- 'csv'
 ncdu_dir <- 'ncdu'
 
 # Create directories
 dir.create(paste(root_dir,plot_dir, sep='/'),showWarnings=F)
+dir.create(paste(root_dir,plot_web_dir,sep='/'),showWarnings=F)
 dir.create(paste(root_dir,csv_dir, sep='/'),showWarnings=F)
 
 
@@ -191,6 +194,75 @@ title(main=paste0('Storage statistics: '),
 
 dev.off()
 
+#  ____  _       _    __        __   _
+# |  _ \| | ___ | |_  \ \      / /__| |__
+# | |_) | |/ _ \| __|  \ \ /\ / / _ \ '_ \
+# |  __/| | (_) | |_    \ V  V /  __/ |_) |
+# |_|   |_|\___/ \__|    \_/\_/ \___|_.__/
+#
+# Plot Web
+plot_pie <- function(data, title, labels, filename, sub="", title_line=-1, width=1400, height=900, pointsize=26, mar=c(0,8,1,8)) {
+    png(filename, width=width, height=height,pointsize=pointsize,type='cairo')
+    par(mar=mar)
+    pie(data,
+        clockwise=T, 
+        labels=labels,
+        init.angle=0,
+        lty=0,
+        col= RColorBrewer::brewer.pal(name='Set1',9)[1:min(ncol(data),9)])
+    title(main=title, sub=sub, line=title_line,cex.main=2)
+
+    dev.off()
+
+}
+
+# 1st pie. Project size on uppmax
+filename <- paste(root_dir, plot_web_dir, 'all_projects_total_size.png',sep='/')
+data     <- proj_sum$size
+title    <- paste0("Project size , Tot: ", pretty(round(sum(proj_sum$size) / 1024^4)), ' TB') 
+labels   <- paste0(proj_sum$project, ', ', round(proj_sum$sizeTB))
+plot_pie(data, title, labels, filename)
+
+# 2nd pie. Project number of files on uppmax
+filename <- paste(root_dir, plot_web_dir, 'all_projects_total_freq.png',sep='/')
+data     <- proj_sum[order(proj_sum$Freq,decreasing=T),]
+title    <- paste0("Number of files per project, Tot: ", pretty(sum(data$Freq)))
+labels   <- paste0(data$project, ', ', pretty(data$Freq))
+plot_pie(data$Freq, title, labels, filename)
+
+# 3rd pie. Size per year
+filename <- paste(root_dir, plot_web_dir, 'all_projects_year.png',sep='/')
+data     <- rev(apply(proj_sum[,5:(ncol(proj_sum)-2)],2,sum,na.rm=T))
+labels   <- paste0(names(data), ', ', round(data / 1024^5,1))
+title    <- "File size by file date (PB)" 
+sub      <- 'Based of file modification date' 
+plot_pie(data, title, labels, filename, sub=sub)
+
+# 4th pie. Size of extensions
+filename <- paste(root_dir, plot_web_dir, 'all_projects_ext_size.png',sep='/')
+data     <- all_extsum[order(all_extsum$size,decreasing=T),]
+ix       <- data$size > 1e12
+labels   <- paste0(data$ext[ix],', ', pretty(round(data$sizeTB[ix])))
+title    <- paste0("Extension size , Tot: ", pretty(round(sum(data$size)/ 1024^4)), ' TB')
+plot_pie(data$size[ix], title, labels, filename)
+
+# 5th pie. freq of extensions
+filename <- paste(root_dir,plot_web_dir, 'all_projects_ext_freq.png',sep='/')
+title    <- paste0("Number of files by extension , Tot: ",pretty(sum(data$freq)))
+data     <- all_extsum[order(all_extsum$freq,decreasing=T),]
+data$ext[is.na(data$ext)] <- 'NA'
+freqix   <- data$freq > 1e5
+labels   <- paste0(data$ext[freqix], ', ', pretty(round(data$freq[freqix]))) 
+plot_pie(data$freq[freqix], title, labels, filename)
+
+# 6th pie. Backup nobackup
+filename = paste(root_dir, plot_web_dir, 'all_projects_location.png',sep='/')
+data <- rev(apply(proj_sum[,(ncol(proj_sum)-1):(ncol(proj_sum))],2,sum,na.rm=T))
+title="Backup vs nobackup size (PB)"
+labels=paste0(names(backup_sum), ', ', round(backup_sum / 1024^5,1))
+plot_pie(backup_sum, title, labels, filename)
+
+
 
 # __        __    _ _         _           __ _ _
 # \ \      / / __(_) |_ ___  | |_ ___    / _(_) | ___
@@ -238,6 +310,7 @@ a <- foreach(project =  proj_sum$project) %dopar% {
     ixlocationlist <-  which(names(locationlist) == project)
     proj_locationsum <- locationlist[[ixlocationlist]]
     proj_locationsum <- proj_locationsum[order(proj_locationsum$locations,decreasing=T),]
+
     # Add a 0 if backup/nobackup doesn't exist
     if(nrow(proj_locationsum) == 1) {
         ifelse(proj_locationsum$location == 'backup',
@@ -259,10 +332,6 @@ a <- foreach(project =  proj_sum$project) %dopar% {
     main_line <- -3
 
     # 1th pie. Size of extensions
-    proj_extsum_pie_size <- proj_extsum[order(proj_extsum$size,decreasing=T),]
-    if(nrow(proj_extsum_pie_size) > 50) proj_extsum_pie_size <- proj_extsum_pie_size[1:50,] 
-    if(nrow(proj_extsum_pie_size) < 2) return() 
-
     pie(proj_extsum_pie_size$size,
         labels=paste0(proj_extsum_pie_size$ext,', ', pretty(round(proj_extsum_pie_size$sizeGB,1))),
         col=RColorBrewer::brewer.pal(name='Set1',9),clockwise=T, 
@@ -273,6 +342,7 @@ a <- foreach(project =  proj_sum$project) %dopar% {
     proj_extsum_pie_freq <- proj_extsum[order(proj_extsum$freq,decreasing=T),]
     proj_extsum_pie_freq$ext[is.na(proj_extsum_pie_freq$ext)] <- 'NA'
     if(nrow(proj_extsum_pie_freq) > 50) proj_extsum_pie_freq <- proj_extsum_pie_freq[1:50,] 
+
     pie(proj_extsum_pie_freq$freq,
         labels=paste0(proj_extsum_pie_freq$ext, ', ', pretty(round(proj_extsum_pie_freq$freq))) , 
         col=RColorBrewer::brewer.pal(name='Set1',9),clockwise=T, 
@@ -294,114 +364,47 @@ a <- foreach(project =  proj_sum$project) %dopar% {
 
     title(main=paste0(project,' storage statistics:'),line=main_line,outer=T,cex.main=2)
     dev.off()
+
+    # create project dir in plot_web_dir
+    dir.create(paste(root_dir,plot_web_dir,project, sep='/'),showWarnings=F)
+    
+    # Start plotting for web
+    # 1th pie. Size of extensions
+    data     <- proj_extsum[order(proj_extsum$size,decreasing=T),]
+    if(nrow(data) > 50) data <- data[1:50,] 
+    if(nrow(data) < 2) return() 
+    filename <- paste(root_dir,plot_web_dir, project, paste0(project, '_ext_size.png'),sep='/')
+    labels   <- paste0(data$ext,', ', pretty(round(data$sizeGB,1)))
+    title    <- paste0("Extension size , Tot: ",pretty(round(sum(proj_extsum$size) / 1024^3,1)), ' GB')
+    plot_pie(data$size, title, labels, filename)
+
+    # 2nd pie. number of files
+    data     <- proj_extsum[order(proj_extsum$freq,decreasing=T),]
+    data$ext[is.na(data$ext)] <- 'NA'
+    if(nrow(data) > 50) data <- data[1:50,] 
+    filename <- paste(root_dir,plot_web_dir, project, paste0(project, '_ext_freq.png'),sep='/')
+    labels   <- paste0(data$ext, ', ', pretty(round(data$freq)))
+    title    <- paste0("Number of files by extension , Tot: ",pretty(sum(proj_extsum$freq)))
+    plot_pie(data$freq, title, labels, filename)
+
+    # 3rd pie. Size per year
+    filename <- paste(root_dir,plot_web_dir, project, paste0(project, '_year.png'),sep='/')
+    data     <- proj_yearsum$size
+    labels   <- paste0(proj_yearsum$years, ', ', pretty(round(proj_yearsum$size / 1024^3,1)))
+    title    <- "File size by file date (GB)" 
+    sub      <- 'Based of file modification date'
+    plot_pie(data, title, labels, filename, sub)
+
+
+    # 4th pie. Backup nobackup
+    filename <- paste(root_dir,plot_web_dir, project, paste0(project, '_location.png'),sep='/')
+    data     <- as.numeric(proj_locationsum$size)
+    labels   <- paste0(proj_locationsum$locations, ', ', pretty(round(as.numeric(proj_locationsum$size) / 1024^3,1)))
+    title    <- "Backup vs nobackup size (GB)"
+    plot_pie(data, title, labels, filename)
 }
 
 
 cat('Finished. Thank you and have a nice day.\n')
-
-
-
-
-
-
-
-
-
-
-#
-#filelist <- list.files('.','*exts\\.csv')
-#filelist <- filelist[filelist != c('all.exts.csv')]
-#statslist <- list()
-## Add all projects to a list
-#for(i in 1:length(filelist)) {
-#    curfile <- filelist[i]
-#    cat(i,'/', length(filelist),  '\t',curfile,'\n')
-#    statslist[[i]] <- read.table(curfile, 
-#                                 sep='\t', 
-#                                 header=T, 
-#                                 stringsAsFactors=F, 
-#                                 colClasses=c('character',rep('numeric',2)), 
-#                                 col.names=c('ext', 'size', 'freq'), 
-#                                 encoding='UTF-8', 
-#                                 comment.char="" )
-#}
-#
-## Sum of all sizes 
-#projsum <- data.frame(project=filelist,
-#                      size=sapply(statslist,function(x) {ifelse(nrow(x) != 0, sum(x[2]),0)}),
-#                      Freq=sapply(statslist,function(x) {ifelse(nrow(x) != 0, sum(x[3]),0)}))
-#projsum$project <- sub('.exts.csv','',projsum$project)
-#projsum <- projsum[order(projsum$size,decreasing=T),]
-#projsum$sizeTB <- round(projsum$size / 1024^4,2) 
-#
-## __   __
-## \ \ / /__  __ _ _ __
-##  \ V / _ \/ _` | '__|
-##   | |  __/ (_| | |
-##   |_|\___|\__,_|_|
-##
-## Year
-#
-#filelist <- list.files('.','*years\\.csv')
-#filelist <- filelist[filelist != c('all.years.csv')]
-#filelist <- filelist[file.size(filelist) > 15]
-#yearslist <- list()
-## Add all projects to a list
-#for(i in 1:length(filelist)) {
-#    curfile <- filelist[i]
-#    cat(i,'/', length(filelist),  '\t',curfile,'\n')
-#    yearslist[[i]] <- read.table(curfile, 
-#                                 sep='\t', 
-#                                 header=T, 
-#                                 stringsAsFactors=F, 
-#                                 colClasses=c('integer',rep('numeric',2)), 
-#                                 col.names=c('year', 'size', 'freq'), 
-#                                 encoding='UTF-8', 
-#                                 comment.char="" )
-#}
-#
-## Sum of all years 
-#yearsum <- data.frame(project=filelist,stringsAsFactors=F)
-#yearsum$project <- sub('.years.csv','',yearsum$project)
-#years <- sort(unique(unlist(sapply(yearslist,function(x) {unique(x$year)}))))
-#for(year in years) {
-#    yearsum <- cbind(yearsum,sapply(yearslist,function(x) {sum(x$size[x$year == year])} ))
-#}
-#colnames(yearsum) <- c('project',years)
-#
-#
-##  _                    _   _
-## | |    ___   ___ __ _| |_(_) ___  _ __  ___
-## | |   / _ \ / __/ _` | __| |/ _ \| '_ \/ __|
-## | |__| (_) | (_| (_| | |_| | (_) | | | \__ \
-## |_____\___/ \___\__,_|\__|_|\___/|_| |_|___/
-##
-## Locations
-#filelist <- list.files('.','*locations\\.csv')
-#filelist <- filelist[filelist != c('all.locations.csv')]
-#filelist <- filelist[file.size(filelist) > 19]
-#locationlist <- list()
-## Add all projects to a list
-#for(i in 1:length(filelist)) {
-#    curfile <- filelist[i]
-#    cat(i,'/', length(filelist),  '\t',curfile,'\n')
-#    locationlist[[i]] <- read.table(curfile, 
-#                                 sep='\t', 
-#                                 header=T, 
-#                                 stringsAsFactors=F, 
-#                                 colClasses=c('character',rep('numeric',2)), 
-#                                 col.names=c('location', 'size', 'freq'), 
-#                                 encoding='UTF-8', 
-#                                 comment.char="" )
-#}
-#
-## Sum of backup and no backup 
-#locationsum <- data.frame(project=filelist,stringsAsFactors=F)
-#locationsum$project <- sub('.locations.csv','',locationsum$project)
-#for(location in c('backup','nobackup')) {
-#    locationsum <- cbind(locationsum,sapply(locationlist,function(x) {sum(x$size[x$location == location])} ))
-#}
-#colnames(locationsum) <- c('project','backup','nobackup')
-
 
 
