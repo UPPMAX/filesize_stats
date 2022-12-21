@@ -76,6 +76,7 @@ def summarize_file_size(archive_file):
             # read it line by line
             i = 0
             t_prev = time.time()
+            inode_memory = set()
             for line in text_stream:
 
                 # find the pattern and pick out variables for readability
@@ -90,6 +91,22 @@ def summarize_file_size(archive_file):
                     continue
 
                 size, user, group, umask, date, inode, disk_space, n3, n4, path = match.groups()
+
+                # skip or flag duplicate files based on inode id
+                # wow, this really increased memory usage! limit to 10 threads now or a 128gb node will die
+                hardlink_flag = ""
+                if inode in inode_memory:
+                    hardlink_flag = ",\"hlnkc\":true"
+                    
+                    # skip them entierly, the row above only kind of fixes the problem.
+                    # 1.3PiB with no fix -> 38TiB with above fix -> 20.6TiB with continue, and SAMS says 21.5TiB.. close enough
+                    # need to investigate how ncdu handles inodes and hardlinks.
+                    continue 
+
+
+
+                # remember inode id
+                inode_memory.add(inode)
 
                 # Create ncdu compatible list
 
@@ -111,11 +128,12 @@ def summarize_file_size(archive_file):
                 np_dt = np.datetime64(date.split('.')[0])
                 epoch_time = int((np_dt - np.datetime64('1970-01-01T00:00:00')) / np.timedelta64(1, 's'))
 
-                ncdu_json.append("""{{"name":{},"asize":{},"dsize":{},"ino":{},"mtime":{},"type":"{}","dirs":{}}}\n""".format(
+                ncdu_json.append("""{{"name":{},"asize":{},"dsize":{},"ino":{}{},"mtime":{},"type":"{}","dirs":{}}}\n""".format(
                         json.dumps(name),
                         size,
                         int(disk_space) * 1024,
                         inode,
+                        hardlink_flag,
                         epoch_time,
                         "dir" if filetype == "d" else "file",
                         json.dumps(path and "{}{}".format(root, dirs) or root)))
