@@ -22,6 +22,8 @@ import argparse
 from collections import defaultdict
 import time
 from calendar import timegm
+from pprint import pprint
+import gc
 
 # uncomment @profile to profile the code to see where time is spent.
 # kernprof -l script_to_profile.py
@@ -63,6 +65,8 @@ def summarize_file_size(archive_file):
     ncdu_json = []
     pattern = re.compile('(\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (.+)$')
 
+    gc.collect()
+    
     try:
 
         # open file
@@ -79,7 +83,15 @@ def summarize_file_size(archive_file):
             #inode_memory = set()
             #inode_lol_size = 1000
             #inode_lol = [ [] for i in range(inode_lol_size) ]
-            for line in text_stream:
+            for i, line in enumerate(text_stream):
+
+                if i % 100000 == 0:
+
+                    variable_names = vars().copy()
+                    for variable_name in variable_names:
+                        v_size = round(sys.getsizeof(vars()[variable_name])/1024**2)
+                        if v_size >= 1:
+                            print(f"{variable_name}\t{v_size:,} MiB".replace(',', ' '))
 
                 # find the pattern and pick out variables for readability
                 match = pattern.match(line)
@@ -392,6 +404,14 @@ def summarize_file_size(archive_file):
 
     print(f"Finished {projid}")
 
+    variable_names = vars().copy()
+    for variable_name in variable_names:
+        v_size = round(sys.getsizeof(vars()[variable_name])/1024**2)
+        if v_size >= 1:
+            print(f"{variable_name}\t{v_size:,} MiB".replace(',', ' '))
+
+#    pdb.set_trace()
+    
     # return all data, converting the defaultdict to regular dict in the process
     return [projid, exts, years, locations, defaultdict_to_regulardict(users)]
 

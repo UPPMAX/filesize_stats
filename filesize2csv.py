@@ -145,15 +145,15 @@ def summarize_file_size(archive_file):
                 np_dt = np.datetime64(date.split('.')[0])
                 epoch_time = int((np_dt - np.datetime64('1970-01-01T00:00:00')) / np.timedelta64(1, 's'))
 
-                ncdu_json.append("""{{"name":{},"asize":{},"dsize":{},"ino":{}{},"mtime":{},"type":"{}","dirs":{}}}\n""".format(
-                        json.dumps(name),
-                        size,
-                        int(disk_space) * 1024,
-                        inode,
-                        hardlink_flag,
-                        epoch_time,
-                        "dir" if filetype == "d" else "file",
-                        json.dumps(path and "{}{}".format(root, dirs) or root)))
+#                ncdu_json.append("""{{"name":{},"asize":{},"dsize":{},"ino":{}{},"mtime":{},"type":"{}","dirs":{}}}\n""".format(
+#                        json.dumps(name),
+#                        size,
+#                        int(disk_space) * 1024,
+#                        inode,
+#                        hardlink_flag,
+#                        epoch_time,
+#                        "dir" if filetype == "d" else "file",
+#                        json.dumps(path and "{}{}".format(root, dirs) or root)))
 
                 # check if dir
                 if umask.split('/')[1].startswith('d'):
@@ -277,30 +277,30 @@ def summarize_file_size(archive_file):
 #
 # NCDU
 
-    with gzip.open(f'{root_dir}/{ncdu_dir}/{projid}.ncdu.gz','wb') as gzfile:
-        gzfile.write( """[1,0,{{"progname":"{0}","progver":"{1}","timestamp":{2}}}""".format( "filesize2csv.py", 1.0, int(time.time())).encode())
-        for line in ncdu_json:
-            obj = json.loads(line)
-            dirs = obj["dirs"]
-            if not isinstance(dirs, list):
-                dirs = dirs.lstrip("/")
-                dirs = dirs.split("/") if dirs else []
-            etype = obj["type"]
-            del obj["dirs"]
-            del obj["type"]
-            adjust_depth(dirs, prev_dirs, gzfile)
-            if etype == "dir":
-                gzfile.write(",\n[{}".format(json.dumps(obj)).encode())
-                dirs.append(obj["name"])
-            else:
-                gzfile.write(",\n{}".format(json.dumps(obj)).encode())
-            prev_dirs = dirs
-
-        dirs = []
-        adjust_depth(dirs, prev_dirs, gzfile)
-        gzfile.write("]\n".encode())
-
-    prev_dirs = []
+#    with gzip.open(f'{root_dir}/{ncdu_dir}/{projid}.ncdu.gz','wb') as gzfile:
+#        gzfile.write( """[1,0,{{"progname":"{0}","progver":"{1}","timestamp":{2}}}""".format( "filesize2csv.py", 1.0, int(time.time())).encode())
+#        for line in ncdu_json:
+#            obj = json.loads(line)
+#            dirs = obj["dirs"]
+#            if not isinstance(dirs, list):
+#                dirs = dirs.lstrip("/")
+#                dirs = dirs.split("/") if dirs else []
+#            etype = obj["type"]
+#            del obj["dirs"]
+#            del obj["type"]
+#            adjust_depth(dirs, prev_dirs, gzfile)
+#            if etype == "dir":
+#                gzfile.write(",\n[{}".format(json.dumps(obj)).encode())
+#                dirs.append(obj["name"])
+#            else:
+#                gzfile.write(",\n{}".format(json.dumps(obj)).encode())
+#            prev_dirs = dirs
+#
+#        dirs = []
+#        adjust_depth(dirs, prev_dirs, gzfile)
+#        gzfile.write("]\n".encode())
+#
+#    prev_dirs = []
 
 
 
