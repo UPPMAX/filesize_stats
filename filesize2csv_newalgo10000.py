@@ -22,8 +22,6 @@ import argparse
 from collections import defaultdict
 import time
 from calendar import timegm
-from pprint import pprint
-import gc
 
 # uncomment @profile to profile the code to see where time is spent.
 # kernprof -l script_to_profile.py
@@ -65,8 +63,6 @@ def summarize_file_size(archive_file):
     ncdu_json = []
     pattern = re.compile('(\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (.+)$')
 
-    gc.collect()
-    
     try:
 
         # open file
@@ -81,17 +77,9 @@ def summarize_file_size(archive_file):
             i = 0
             t_prev = time.time()
             #inode_memory = set()
-            #inode_lol_size = 1000
-            #inode_lol = [ [] for i in range(inode_lol_size) ]
-            for i, line in enumerate(text_stream):
-
-                if i % 100000 == 0:
-
-                    variable_names = vars().copy()
-                    for variable_name in variable_names:
-                        v_size = round(sys.getsizeof(vars()[variable_name])/1024**2)
-                        if v_size >= 1:
-                            print(f"{variable_name}\t{v_size:,} MiB".replace(',', ' '))
+            inode_lol_size = 100000
+            inode_lol = [ [] for i in range(inode_lol_size) ]
+            for line in text_stream:
 
                 # find the pattern and pick out variables for readability
                 match = pattern.match(line)
@@ -108,22 +96,21 @@ def summarize_file_size(archive_file):
 
                 # skip or flag duplicate files based on inode id
                 # wow, this really increased memory usage! limit to 10 threads now or a 128gb node will die
-                #inode = int(inode)
+                inode = int(inode)
                 hardlink_flag = ""
-                #if int(inode) in inode_memory:
-                #if inode in inode_lol[ inode % inode_lol_size ]:
-                #    hardlink_flag = ",\"hlnkc\":true"
+                if inode in inode_lol[ inode % inode_lol_size ]:
+                    hardlink_flag = ",\"hlnkc\":true"
                     
                     # skip them entierly, the row above only kind of fixes the problem.
                     # 1.3PiB with no fix -> 38TiB with above fix -> 20.6TiB with continue, and SAMS says 21.5TiB.. close enough
                     # need to investigate how ncdu handles inodes and hardlinks.
-                #    continue 
+                    continue 
 
 
 
                 # remember inode id
                 #inode_memory.add(int(inode))
-                #inode_lol[ inode % inode_lol_size ].append(inode)
+                inode_lol[ inode % inode_lol_size ].append(inode)
 
                 # Create ncdu compatible list
 
@@ -404,14 +391,6 @@ def summarize_file_size(archive_file):
 
     print(f"Finished {projid}")
 
-    variable_names = vars().copy()
-    for variable_name in variable_names:
-        v_size = round(sys.getsizeof(vars()[variable_name])/1024**2)
-        if v_size >= 1:
-            print(f"{variable_name}\t{v_size:,} MiB".replace(',', ' '))
-
-#    pdb.set_trace()
-    
     # return all data, converting the defaultdict to regular dict in the process
     return [projid, exts, years, locations, defaultdict_to_regulardict(users)]
 
