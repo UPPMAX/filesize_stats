@@ -85,13 +85,13 @@ def summarize_file_size(archive_file):
             #inode_lol = [ [] for i in range(inode_lol_size) ]
             for i, line in enumerate(text_stream):
 
-                if i % 100000 == 0:
-
-                    variable_names = vars().copy()
-                    for variable_name in variable_names:
-                        v_size = round(sys.getsizeof(vars()[variable_name])/1024**2)
-                        if v_size >= 1:
-                            print(f"{variable_name}\t{v_size:,} MiB".replace(',', ' '))
+#                if i % 100000 == 0:
+#
+#                    variable_names = vars().copy()
+#                    for variable_name in variable_names:
+#                        v_size = round(sys.getsizeof(vars()[variable_name])/1024**2)
+#                        if v_size >= 1:
+#                            print(f"{variable_name}\t{v_size:,} MiB".replace(',', ' '))
 
                 # find the pattern and pick out variables for readability
                 match = pattern.match(line)
@@ -403,12 +403,6 @@ def summarize_file_size(archive_file):
     #        csvfile.write(f"{location}\t{row[0]}\t{row[1]}\n")
 
     print(f"Finished {projid}")
-
-    variable_names = vars().copy()
-    for variable_name in variable_names:
-        v_size = round(sys.getsizeof(vars()[variable_name])/1024**2)
-        if v_size >= 1:
-            print(f"{variable_name}\t{v_size:,} MiB".replace(',', ' '))
 
 #    pdb.set_trace()
     
